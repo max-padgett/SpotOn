@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">SpotOn</string>
+    <string name="highscore"></string>
+    <string name="level"></string>
+    <string name="score"></string>
+    <string name="highscorelist">High Scores</string>
+    <string name="game_over">Game Over</string>
+    <string name="reset_game">Reset Game</string>
+</resources>
