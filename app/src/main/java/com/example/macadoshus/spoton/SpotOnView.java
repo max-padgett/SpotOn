@@ -2,15 +2,18 @@ package com.example.macadoshus.spoton;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.SoundPool;
+import android.os.Build;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
@@ -21,12 +24,17 @@ import android.widget.TextView;
 
 
 import android.app.AlertDialog.Builder;
+
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import android.os.Handler;
+
+import com.google.gson.Gson;
 
 
 /**
@@ -81,10 +89,8 @@ public class SpotOnView extends View{
     private int volume;
     private Map<Integer, Integer> soundMap;
 
-    //for shake detection
-    private SensorManager mSensorManager;
-    private Sensor mAccelerometer;
-    private ShakeDetector mShakeDetector;
+    //list of highscores
+   private HighScoresQueue newQueue = new HighScoresQueue();
 
     public SpotOnView(Context context, SharedPreferences sharedPreferences, RelativeLayout parentLayout) {
         super(context);
@@ -102,16 +108,11 @@ public class SpotOnView extends View{
         currentScoreTextView = (TextView) relativeLayout.findViewById(R.id.scoreTextView);
         levelTextView = (TextView) relativeLayout.findViewById(R.id.levelTextView);
 
-        mSensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
-        mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        mShakeDetector = new ShakeDetector();
-        mShakeDetector.setOnShakeListener(new ShakeDetector.OnShakeListener() {
-
-            @Override
-            public void onShake(int count) {
-                handleShakeEvent(count);
-            }
-        });
+        if(preferences.contains("HighScoreList")) {
+            Gson gson = new Gson();
+            String json = preferences.getString("HighScoreList", "");
+            newQueue = gson.fromJson(json, newQueue.getClass());
+        }
 
         spotHandler = new Handler();
     }
@@ -122,20 +123,20 @@ public class SpotOnView extends View{
         viewHeight = height;
     }
 
-    public void handleShakeEvent(int count){
-        if(gameOver && count == 3) {
-            Builder dialogBuilder = new AlertDialog.Builder(getContext());
-            dialogBuilder.setTitle(R.string.highscorelist);
-            dialogBuilder.setMessage(resources.getString(R.string.score) + " " + score);
-            dialogDisplayed = true;
-            dialogBuilder.show();
-        }
+    public void createList(){
+
     }
-    public  void pause(){
+
+
+    public void pause(){
         gamePaused = true;
         soundPool.release();
         soundPool = null;
         cancelAnimations();
+    }
+
+    public boolean isGameOver(){
+        return gameOver;
     }
 
     private void cancelAnimations(){
@@ -199,6 +200,10 @@ public class SpotOnView extends View{
         levelTextView.setText(resources.getString(R.string.level)+ " " + level);
     }
 
+    public HighScoresQueue getHighscoreList(){
+        return  newQueue;
+    }
+
     private Runnable addSpotRunnable = new Runnable() {
         @Override
         public void run() {
@@ -259,33 +264,64 @@ public class SpotOnView extends View{
         return true;
     }
 
+    @SuppressWarnings("deprecation")
+    @SuppressLint("NewApi")
+    public static boolean checkImageResource(Context ctx, ImageView imageView,
+                                             int imageResource) {
+        boolean result = false;
 
+        if (ctx != null && imageView != null && imageView.getDrawable() != null) {
+            Drawable.ConstantState constantState;
 
-    public void touchedSpot(ImageView spot){
-        relativeLayout.removeView(spot);
-        spots.remove(spot);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                constantState = ctx.getResources()
+                        .getDrawable(imageResource, ctx.getTheme())
+                        .getConstantState();
+            } else {
+                constantState = ctx.getResources().getDrawable(imageResource)
+                        .getConstantState();
+            }
 
-        ++spotsTouched;
-        score += 10 * level;
-
-        if(soundPool != null){
-            soundPool.play(HIT_SOUND_ID, volume, volume, SOUND_PRIORITY, 0, 1f);
-        }
-
-        if(spotsTouched % 10 == 0){
-            ++level;
-            animationTime *= 0.95;
-
-            if(livesLinearLayout.getChildCount() < MAX_LIVES){
-                ImageView life = (ImageView) layoutInflater.inflate(R.layout.life, null);
-                livesLinearLayout.addView(life);
+            if (imageView.getDrawable().getConstantState() == constantState) {
+                result = true;
             }
         }
 
-        displayScores();
+        return result;
+    }
 
-        if(!gameOver)
-            addNewSpot();
+    public void touchedSpot(ImageView spot){
+        if(checkImageResource(spot.getContext(), spot, R.drawable.green_spot)){
+
+
+            relativeLayout.removeView(spot);
+            spots.remove(spot);
+
+            ++spotsTouched;
+            score += 10 * level;
+
+            if(soundPool != null){
+                soundPool.play(HIT_SOUND_ID, volume, volume, SOUND_PRIORITY, 0, 1f);
+            }
+
+            if(spotsTouched % 10 == 0){
+                ++level;
+                animationTime *= 0.95;
+
+                if(livesLinearLayout.getChildCount() < MAX_LIVES){
+                    ImageView life = (ImageView) layoutInflater.inflate(R.layout.life, null);
+                    livesLinearLayout.addView(life);
+                }
+            }
+
+            displayScores();
+
+            if(!gameOver)
+                addNewSpot();
+
+        }
+        else
+            spot.setImageResource(R.drawable.green_spot);
     }
 
     public void missedSpot(ImageView spot){
@@ -301,17 +337,23 @@ public class SpotOnView extends View{
         if(livesLinearLayout.getChildCount() == 0) {
             gameOver = true;
             if (score > highScore) {
+                newQueue.highScoresQueue.add(new HighScores(score , new Date()));
                 SharedPreferences.Editor editor = preferences.edit();
+                Gson gson = new Gson();
+                String json = gson.toJson(newQueue);
+                editor.putString("HighScoreList", json);
                 editor.putInt(HIGH_SCORE, score);
                 editor.commit();
                 highScore = score;
+            }else if(newQueue.greaterThan(score)){
+
             }
 
             cancelAnimations();
 
             Builder dialogBuilder = new AlertDialog.Builder(getContext());
             dialogBuilder.setTitle(R.string.game_over);
-            dialogBuilder.setMessage(resources.getString(R.string.score) + " " + score);
+            dialogBuilder.setMessage("Score: " + score);
             dialogBuilder.setPositiveButton(R.string.reset_game, new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
                     displayScores();
